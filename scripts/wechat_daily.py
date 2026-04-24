@@ -67,6 +67,23 @@ def get_report_dir(config):
     return os.path.expanduser(config.get("report_dir", "~/Documents/wechat-daily"))
 
 
+def normalize_monitor_names(entries):
+    """兼容旧版字符串列表和新版对象列表"""
+    names = set()
+    for entry in entries or []:
+        if isinstance(entry, str):
+            name = entry.strip()
+        elif isinstance(entry, dict):
+            if entry.get("enabled", True) is False:
+                continue
+            name = str(entry.get("name", "")).strip()
+        else:
+            name = str(entry).strip()
+        if name:
+            names.add(name)
+    return names
+
+
 # === 基础工具 ===
 
 def load_keys():
@@ -292,18 +309,20 @@ def generate_report(chat_stats, config, target_date=None):
     if target_date is None:
         target_date = datetime.now()
 
-    monitor_groups = set(config.get("monitor_groups", []))
-    monitor_contacts = set(config.get("monitor_contacts", []))
+    monitor_groups = normalize_monitor_names(config.get("monitor_groups", []))
+    monitor_contacts = normalize_monitor_names(config.get("monitor_contacts", []))
+    has_group_filter = bool(config.get("monitor_groups", []))
+    has_contact_filter = bool(config.get("monitor_contacts", []))
 
     # Filter by monitor list if configured
-    if monitor_groups or monitor_contacts:
+    if has_group_filter or has_contact_filter:
         filtered = {}
         for uname, data in chat_stats.items():
             display = data["display"]
             is_group = data.get("is_group", "@chatroom" in uname)
-            if is_group and (not monitor_groups or display in monitor_groups):
+            if is_group and display in monitor_groups:
                 filtered[uname] = data
-            elif not is_group and (not monitor_contacts or display in monitor_contacts):
+            elif not is_group and display in monitor_contacts:
                 filtered[uname] = data
         chat_stats = filtered
 

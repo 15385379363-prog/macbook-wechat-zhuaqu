@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import Mock
+import importlib.util
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +17,15 @@ from macbook_wechat_zhuaqu.service.models import (
 )
 from macbook_wechat_zhuaqu.service.runtime import ServiceRuntime
 from macbook_wechat_zhuaqu.service.wechat import match_captured_keys_to_databases
+
+
+_WECHAT_DAILY_SPEC = importlib.util.spec_from_file_location(
+    "wechat_daily_script",
+    Path(__file__).resolve().parents[1] / "scripts" / "wechat_daily.py",
+)
+wechat_daily_script = importlib.util.module_from_spec(_WECHAT_DAILY_SPEC)
+assert _WECHAT_DAILY_SPEC.loader is not None
+_WECHAT_DAILY_SPEC.loader.exec_module(wechat_daily_script)
 
 
 class FakeRuntime(ServiceRuntime):
@@ -91,6 +101,32 @@ def test_match_captured_keys_to_database_salts():
         "contact": "0ce7be23a5c06ce9f13a41984bbf5743202e1b244b3cefbae621cf8b787dc175",
         "session": "b70c88c64d840dafd999794df0a937219e893e3e74142097baf505cedcf47842",
     }
+
+
+def test_wechat_daily_generate_report_supports_object_targets():
+    chat_stats = {
+        "group@chatroom": {
+            "display": "【已毕业】航海家俱乐部🎢｜生财",
+            "is_group": True,
+            "text_count": 2,
+            "messages": [{"time": "09:00", "content": "AI 提效"}],
+        },
+        "wxid_contact": {
+            "display": "老婆",
+            "is_group": False,
+            "text_count": 1,
+            "messages": [{"time": "10:00", "content": "周末安排"}],
+        },
+    }
+    config = {
+        "monitor_groups": [{"name": "【已毕业】航海家俱乐部🎢｜生财", "enabled": True}],
+        "monitor_contacts": [{"name": "老婆", "enabled": False}],
+    }
+
+    report = wechat_daily_script.generate_report(chat_stats, config)
+
+    assert "【已毕业】航海家俱乐部🎢｜生财" in report
+    assert "老婆" not in report
 
 
 def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
