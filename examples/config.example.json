@@ -19,8 +19,14 @@
   "report_dir": "~/Documents/wechat-daily",
   "time_mode": "8am_to_8am",
   "feishu_delivery": {
-    "enabled": false,
-    "webhook_url": null
+    "enabled": true,
+    "mode": "lark_cli",
+    "cli_user_id": "ou_xxx",
+    "cli_profile": "personal",
+    "cli_identity": "user",
+    "webhook_url": null,
+    "secret": null,
+    "message_title": "微信日报"
   },
   "summary": {
     "template": "focus",

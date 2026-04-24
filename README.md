@@ -8,7 +8,7 @@ Skill 优先、本地服务驱动的微信日报 MVP。目标是把 macOS 微信
 - 自动扫描群聊/联系人，并允许手动补充
 - 生成本地 Markdown 日报
 - 页面内预览最近日报
-- 手动同步到飞书消息
+- 手动同步到飞书消息，优先支持 `lark-cli` 直发给自己
 
 ## 项目结构
 
@@ -35,6 +35,16 @@ python3 scripts/skill_entry.py send --test-mode
 ```
 
 打开 <http://127.0.0.1:8765>。
+
+## 飞书发送
+
+推荐在设置页里把发送模式设为 `lark_cli`，并填写你自己的飞书 `open_id`。项目会直接调用：
+
+```bash
+lark-cli im +messages-send --as user --user-id ou_xxx --text "..."
+```
+
+如果你更习惯机器人方式，也可以切回 `webhook` 模式，并继续填写 `webhook_url` 和可选 `secret`。
 
 ## 隐私与边界
 

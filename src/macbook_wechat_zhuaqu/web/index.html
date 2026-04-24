@@ -99,7 +99,17 @@
         </div>
         <div class="row">
           <label>摘要模板<input id="summary-template" /></label>
-          <label>飞书 Webhook<input id="feishu-webhook" /></label>
+          <label>飞书发送模式
+            <input id="feishu-mode" placeholder="lark_cli 或 webhook" />
+          </label>
+        </div>
+        <div class="row">
+          <label>飞书接收人 Open ID<input id="feishu-user-id" placeholder="例如：ou_xxx，CLI 直发必填" /></label>
+          <label>飞书 CLI Profile<input id="feishu-profile" placeholder="可选，例如：personal" /></label>
+        </div>
+        <div class="row">
+          <label>飞书 CLI 身份<input id="feishu-identity" placeholder="user 或 bot" /></label>
+          <label>飞书 Webhook<input id="feishu-webhook" placeholder="仅 webhook 模式需要" /></label>
         </div>
         <div class="row">
           <label>飞书 Secret（可选）<input id="feishu-secret" placeholder="配置了签名校验时填写" /></label>
@@ -108,7 +118,7 @@
         <div class="actions">
           <button class="primary" id="save-settings">保存设置</button>
         </div>
-        <p class="hint">如果你的飞书机器人开启了签名校验，需要同时填写 webhook 和 secret。</p>
+        <p class="hint">推荐用 `lark_cli` 直发给你自己，只要填接收人 open_id；`webhook` 模式继续保留给群机器人。</p>
       </section>
 
       <section id="preview" data-panel hidden>
@@ -212,6 +222,10 @@
       document.getElementById("report-dir").value = currentConfig.report_dir;
       document.getElementById("time-mode").value = currentConfig.time_mode;
       document.getElementById("summary-template").value = currentConfig.summary.template;
+      document.getElementById("feishu-mode").value = currentConfig.feishu_delivery.mode || "lark_cli";
+      document.getElementById("feishu-user-id").value = currentConfig.feishu_delivery.cli_user_id || "";
+      document.getElementById("feishu-profile").value = currentConfig.feishu_delivery.cli_profile || "";
+      document.getElementById("feishu-identity").value = currentConfig.feishu_delivery.cli_identity || "user";
       document.getElementById("feishu-webhook").value = currentConfig.feishu_delivery.webhook_url || "";
       document.getElementById("feishu-secret").value = currentConfig.feishu_delivery.secret || "";
       document.getElementById("feishu-title").value = currentConfig.feishu_delivery.message_title || "微信日报";
@@ -258,7 +272,15 @@
       currentConfig.time_mode = document.getElementById("time-mode").value.trim();
       currentConfig.summary.template = document.getElementById("summary-template").value.trim();
       currentConfig.summary.ai_enabled = true;
-      currentConfig.feishu_delivery.enabled = Boolean(document.getElementById("feishu-webhook").value.trim());
+      currentConfig.feishu_delivery.mode = document.getElementById("feishu-mode").value.trim() || "lark_cli";
+      currentConfig.feishu_delivery.cli_user_id = document.getElementById("feishu-user-id").value.trim() || null;
+      currentConfig.feishu_delivery.cli_profile = document.getElementById("feishu-profile").value.trim() || null;
+      currentConfig.feishu_delivery.cli_identity = document.getElementById("feishu-identity").value.trim() || "user";
+      currentConfig.feishu_delivery.enabled = Boolean(
+        currentConfig.feishu_delivery.mode === "lark_cli"
+          ? currentConfig.feishu_delivery.cli_user_id
+          : document.getElementById("feishu-webhook").value.trim()
+      );
       currentConfig.feishu_delivery.webhook_url = document.getElementById("feishu-webhook").value.trim() || null;
       currentConfig.feishu_delivery.secret = document.getElementById("feishu-secret").value.trim() || null;
       currentConfig.feishu_delivery.message_title = document.getElementById("feishu-title").value.trim() || "微信日报";
@@ -312,7 +334,10 @@
       setBusy(button, true, testMode ? "测试发送中..." : "发送中...");
       try {
         const result = await api("/api/feishu/send", { method: "POST", body: JSON.stringify({ test_mode: testMode }) });
-        feishuStatus.textContent = `${testMode ? "测试" : "正式"}发送成功，状态码 ${result.status_code}`;
+        const detail = result.mode === "lark_cli"
+          ? `已通过 lark-cli 直发`
+          : `状态码 ${result.status_code}`;
+        feishuStatus.textContent = `${testMode ? "测试" : "正式"}发送成功，${detail}`;
         feishuStatus.className = "status success";
       } catch (error) {
         feishuStatus.textContent = error.message;

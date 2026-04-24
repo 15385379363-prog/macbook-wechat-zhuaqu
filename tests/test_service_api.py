@@ -106,8 +106,10 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
         time_mode="8am_to_8am",
         feishu_delivery=FeishuDeliveryConfig(
             enabled=True,
-            webhook_url="https://example.com/hook",
-            secret="demo-secret",
+            mode="lark_cli",
+            cli_user_id="ou_demo_user",
+            cli_profile="personal",
+            cli_identity="user",
             message_title="微信重点日报",
         ),
         summary=SummarySettings(template="focus", ai_enabled=True),
@@ -119,7 +121,8 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
 
     persisted = client.get("/api/config")
     assert persisted.status_code == 200
-    assert persisted.json()["feishu_delivery"]["webhook_url"] == "https://example.com/hook"
+    assert persisted.json()["feishu_delivery"]["mode"] == "lark_cli"
+    assert persisted.json()["feishu_delivery"]["cli_user_id"] == "ou_demo_user"
     assert persisted.json()["feishu_delivery"]["message_title"] == "微信重点日报"
 
 
@@ -151,12 +154,61 @@ def test_latest_report_endpoint_returns_preview_metadata(tmp_path: Path):
     assert body["raw_markdown"].startswith("# 微信日报")
 
 
-def test_real_feishu_send_supports_secret_signature(monkeypatch, tmp_path: Path):
+def test_lark_cli_send_uses_direct_message(monkeypatch, tmp_path: Path):
     runtime = ServiceRuntime(tmp_path / "config.json", tmp_path / "keys.json", Path("/tmp/project"))
     runtime.save_config(
         AppConfig(
             feishu_delivery=FeishuDeliveryConfig(
                 enabled=True,
+                mode="lark_cli",
+                cli_user_id="ou_demo_user",
+                cli_profile="personal",
+                cli_identity="user",
+                message_title="每日微信重点",
+            )
+        )
+    )
+
+    captured = {}
+
+    mocked_result = Mock()
+    mocked_result.stdout = '{"code":0,"msg":"success"}'
+    mocked_result.returncode = 0
+
+    def fake_run(cmd, check, capture_output, text):
+        captured["cmd"] = cmd
+        captured["check"] = check
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        return mocked_result
+
+    monkeypatch.setattr("macbook_wechat_zhuaqu.service.runtime.subprocess.run", fake_run)
+
+    result = runtime.send_feishu_message("# 微信日报\n\n- 一条重点", test_mode=False)
+
+    assert result["ok"] is True
+    assert captured["cmd"][:8] == [
+        "lark-cli",
+        "im",
+        "+messages-send",
+        "--profile",
+        "personal",
+        "--as",
+        "user",
+        "--user-id",
+    ]
+    assert captured["cmd"][8] == "ou_demo_user"
+    assert captured["cmd"][9] == "--text"
+    assert "每日微信重点" in captured["cmd"][10]
+
+
+def test_webhook_send_still_supported_as_fallback(monkeypatch, tmp_path: Path):
+    runtime = ServiceRuntime(tmp_path / "config.json", tmp_path / "keys.json", Path("/tmp/project"))
+    runtime.save_config(
+        AppConfig(
+            feishu_delivery=FeishuDeliveryConfig(
+                enabled=True,
+                mode="webhook",
                 webhook_url="https://example.com/hook",
                 secret="demo-secret",
                 message_title="每日微信重点",

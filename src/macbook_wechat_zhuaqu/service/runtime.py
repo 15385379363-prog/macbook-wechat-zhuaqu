@@ -191,12 +191,40 @@ class ServiceRuntime:
         delivery = config.feishu_delivery
         if not delivery.enabled and not test_mode:
             raise ValueError("飞书同步未启用。")
-        if not delivery.webhook_url:
-            raise ValueError("请先在设置页填写飞书 webhook_url。")
 
         title = delivery.message_title.strip() or "微信日报"
         prefix = "[测试发送]\n" if test_mode else ""
         content = f"{prefix}{title}\n\n{markdown}"
+        if delivery.mode == "lark_cli":
+            return self._send_via_lark_cli(delivery, content, test_mode)
+        return self._send_via_webhook(delivery, content, test_mode)
+
+    def _send_via_lark_cli(self, delivery, content: str, test_mode: bool) -> dict:
+        if not delivery.cli_user_id:
+            raise ValueError("请先在设置页填写飞书接收人 open_id。")
+
+        cmd = ["lark-cli", "im", "+messages-send"]
+        if delivery.cli_profile:
+            cmd.extend(["--profile", delivery.cli_profile])
+        cmd.extend(["--as", delivery.cli_identity, "--user-id", delivery.cli_user_id, "--text", content])
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except FileNotFoundError as exc:
+            raise ValueError("未找到 lark-cli，请先安装并完成登录。") from exc
+        except subprocess.CalledProcessError as exc:
+            error = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise ValueError(f"lark-cli 发送失败: {error}") from exc
+        return {
+            "ok": True,
+            "test_mode": test_mode,
+            "mode": "lark_cli",
+            "stdout": result.stdout.strip(),
+        }
+
+    def _send_via_webhook(self, delivery, content: str, test_mode: bool) -> dict:
+        if not delivery.webhook_url:
+            raise ValueError("请先在设置页填写飞书 webhook_url。")
+
         payload = {"msg_type": "text", "content": {"text": content}}
         if delivery.secret:
             timestamp = str(int(datetime.now().timestamp()))
@@ -214,4 +242,9 @@ class ServiceRuntime:
             timeout=20.0,
         )
         response.raise_for_status()
-        return {"ok": True, "test_mode": test_mode, "status_code": response.status_code}
+        return {
+            "ok": True,
+            "test_mode": test_mode,
+            "mode": "webhook",
+            "status_code": response.status_code,
+        }

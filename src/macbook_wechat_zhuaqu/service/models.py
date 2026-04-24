@@ -14,6 +14,10 @@ class WechatTarget(BaseModel):
 
 class FeishuDeliveryConfig(BaseModel):
     enabled: bool = False
+    mode: Literal["lark_cli", "webhook"] = "lark_cli"
+    cli_user_id: Optional[str] = None
+    cli_profile: Optional[str] = None
+    cli_identity: Literal["user", "bot"] = "user"
     webhook_url: Optional[str] = None
     secret: Optional[str] = None
     message_title: str = "微信日报"
