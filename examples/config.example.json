@@ -1,0 +1,29 @@
+{
+  "wxid": "wxid_demo",
+  "db_base_path": "/Users/your-name/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_demo/db_storage",
+  "monitor_groups": [
+    {
+      "name": "【已毕业】航海家俱乐部🎢｜生财",
+      "enabled": true,
+      "manual": false
+    }
+  ],
+  "monitor_contacts": [
+    {
+      "name": "老婆",
+      "enabled": true,
+      "source_id": "Dahooluu",
+      "manual": false
+    }
+  ],
+  "report_dir": "~/Documents/wechat-daily",
+  "time_mode": "8am_to_8am",
+  "feishu_delivery": {
+    "enabled": false,
+    "webhook_url": null
+  },
+  "summary": {
+    "template": "focus",
+    "ai_enabled": true
+  }
+}
