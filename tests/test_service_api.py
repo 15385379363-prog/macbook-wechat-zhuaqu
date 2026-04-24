@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import Mock
 import importlib.util
+from typing import Optional
 
 from fastapi.testclient import TestClient
 
@@ -63,8 +64,14 @@ class FakeRuntime(ServiceRuntime):
         )
         return self.latest_report
 
-    def send_feishu_message(self, markdown: str, test_mode: bool) -> dict:
-        self.sent.append({"markdown": markdown, "test_mode": test_mode})
+    def send_feishu_message(self, markdown: str, test_mode: bool, summary_text: Optional[str] = None) -> dict:
+        self.sent.append(
+            {
+                "markdown": summary_text if summary_text is not None else markdown,
+                "raw_markdown": markdown,
+                "test_mode": test_mode,
+            }
+        )
         return {"ok": True, "test_mode": test_mode}
 
 
@@ -146,6 +153,7 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
             cli_user_id="ou_demo_user",
             cli_profile="personal",
             cli_identity="user",
+            send_content="summary",
             message_title="微信重点日报",
         ),
         summary=SummarySettings(template="focus", ai_enabled=True),
@@ -159,6 +167,7 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
     assert persisted.status_code == 200
     assert persisted.json()["feishu_delivery"]["mode"] == "lark_cli"
     assert persisted.json()["feishu_delivery"]["cli_user_id"] == "ou_demo_user"
+    assert persisted.json()["feishu_delivery"]["send_content"] == "summary"
     assert persisted.json()["feishu_delivery"]["message_title"] == "微信重点日报"
 
 
@@ -174,6 +183,7 @@ def test_generate_report_and_send_to_feishu(tmp_path: Path):
     assert send_response.status_code == 200
     assert send_response.json()["ok"] is True
     assert runtime.sent[-1]["test_mode"] is False
+    assert runtime.sent[-1]["markdown"] == "今天最重要的是 AI 提效讨论，以及一个需要跟进的家庭安排。"
 
 
 def test_latest_report_endpoint_returns_preview_metadata(tmp_path: Path):
@@ -200,6 +210,7 @@ def test_lark_cli_send_uses_direct_message(monkeypatch, tmp_path: Path):
                 cli_user_id="ou_demo_user",
                 cli_profile="personal",
                 cli_identity="user",
+                send_content="summary",
                 message_title="每日微信重点",
             )
         )
@@ -236,6 +247,39 @@ def test_lark_cli_send_uses_direct_message(monkeypatch, tmp_path: Path):
     assert captured["cmd"][8] == "ou_demo_user"
     assert captured["cmd"][9] == "--text"
     assert "每日微信重点" in captured["cmd"][10]
+
+
+def test_lark_cli_send_can_include_full_report_when_configured(monkeypatch, tmp_path: Path):
+    runtime = ServiceRuntime(tmp_path / "config.json", tmp_path / "keys.json", Path("/tmp/project"))
+    runtime.save_config(
+        AppConfig(
+            feishu_delivery=FeishuDeliveryConfig(
+                enabled=True,
+                mode="lark_cli",
+                cli_user_id="ou_demo_user",
+                cli_identity="user",
+                send_content="full",
+                message_title="每日微信重点",
+            )
+        )
+    )
+
+    captured = {}
+    mocked_result = Mock()
+    mocked_result.stdout = '{"code":0,"msg":"success"}'
+    mocked_result.returncode = 0
+
+    def fake_run(cmd, check, capture_output, text):
+        captured["cmd"] = cmd
+        return mocked_result
+
+    monkeypatch.setattr("macbook_wechat_zhuaqu.service.runtime.subprocess.run", fake_run)
+
+    runtime.send_feishu_message("完整日志内容", test_mode=False, summary_text="摘要内容")
+
+    text_value = captured["cmd"][captured["cmd"].index("--text") + 1]
+    assert "完整日志内容" in text_value
+    assert "摘要内容" not in text_value
 
 
 def test_webhook_send_still_supported_as_fallback(monkeypatch, tmp_path: Path):

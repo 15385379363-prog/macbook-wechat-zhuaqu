@@ -21,6 +21,7 @@
   "feishu_delivery": {
     "enabled": true,
     "mode": "lark_cli",
+    "send_content": "summary",
     "cli_user_id": "ou_xxx",
     "cli_profile": "personal",
     "cli_identity": "user",

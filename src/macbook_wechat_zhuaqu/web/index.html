@@ -104,6 +104,12 @@
           </label>
         </div>
         <div class="row">
+          <label>飞书发送内容
+            <input id="feishu-send-content" placeholder="summary 或 full" />
+          </label>
+          <label>飞书消息标题<input id="feishu-title" placeholder="例如：刘杰的微信重点日报" /></label>
+        </div>
+        <div class="row">
           <label>飞书接收人 Open ID<input id="feishu-user-id" placeholder="例如：ou_xxx，CLI 直发必填" /></label>
           <label>飞书 CLI Profile<input id="feishu-profile" placeholder="可选，例如：personal" /></label>
         </div>
@@ -113,12 +119,11 @@
         </div>
         <div class="row">
           <label>飞书 Secret（可选）<input id="feishu-secret" placeholder="配置了签名校验时填写" /></label>
-          <label>飞书消息标题<input id="feishu-title" placeholder="例如：刘杰的微信重点日报" /></label>
         </div>
         <div class="actions">
           <button class="primary" id="save-settings">保存设置</button>
         </div>
-        <p class="hint">推荐用 `lark_cli` 直发给你自己，只要填接收人 open_id；`webhook` 模式继续保留给群机器人。</p>
+        <p class="hint">推荐用 `lark_cli` 直发给你自己；飞书发送内容默认用 `summary`，这样消息里只保留 AI 分析结果。</p>
       </section>
 
       <section id="preview" data-panel hidden>
@@ -223,6 +228,7 @@
       document.getElementById("time-mode").value = currentConfig.time_mode;
       document.getElementById("summary-template").value = currentConfig.summary.template;
       document.getElementById("feishu-mode").value = currentConfig.feishu_delivery.mode || "lark_cli";
+      document.getElementById("feishu-send-content").value = currentConfig.feishu_delivery.send_content || "summary";
       document.getElementById("feishu-user-id").value = currentConfig.feishu_delivery.cli_user_id || "";
       document.getElementById("feishu-profile").value = currentConfig.feishu_delivery.cli_profile || "";
       document.getElementById("feishu-identity").value = currentConfig.feishu_delivery.cli_identity || "user";
@@ -273,6 +279,7 @@
       currentConfig.summary.template = document.getElementById("summary-template").value.trim();
       currentConfig.summary.ai_enabled = true;
       currentConfig.feishu_delivery.mode = document.getElementById("feishu-mode").value.trim() || "lark_cli";
+      currentConfig.feishu_delivery.send_content = document.getElementById("feishu-send-content").value.trim() || "summary";
       currentConfig.feishu_delivery.cli_user_id = document.getElementById("feishu-user-id").value.trim() || null;
       currentConfig.feishu_delivery.cli_profile = document.getElementById("feishu-profile").value.trim() || null;
       currentConfig.feishu_delivery.cli_identity = document.getElementById("feishu-identity").value.trim() || "user";
@@ -298,7 +305,7 @@
         document.getElementById("summary-text").textContent = latestReport.summary_text;
         document.getElementById("report-preview").textContent = latestReport.raw_markdown;
         renderReportMeta(latestReport);
-        dashboardStatus.textContent = "日报生成完成。";
+        dashboardStatus.textContent = "日报生成完成，页面保留完整日志，飞书默认只发送摘要。";
       } catch (error) {
         document.getElementById("summary-text").textContent = error.message;
       } finally {
@@ -337,7 +344,8 @@
         const detail = result.mode === "lark_cli"
           ? `已通过 lark-cli 直发`
           : `状态码 ${result.status_code}`;
-        feishuStatus.textContent = `${testMode ? "测试" : "正式"}发送成功，${detail}`;
+        const contentMode = currentConfig?.feishu_delivery?.send_content || "summary";
+        feishuStatus.textContent = `${testMode ? "测试" : "正式"}发送成功，${detail}，发送内容：${contentMode === "summary" ? "仅摘要" : "全量日志"}`;
         feishuStatus.className = "status success";
       } catch (error) {
         feishuStatus.textContent = error.message;

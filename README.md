@@ -38,13 +38,13 @@ python3 scripts/skill_entry.py send --test-mode
 
 ## 飞书发送
 
-推荐在设置页里把发送模式设为 `lark_cli`，并填写你自己的飞书 `open_id`。项目会直接调用：
+推荐在设置页里把发送模式设为 `lark_cli`，并填写你自己的飞书 `open_id`。默认发送内容为 `summary`，也就是只把 AI 分析结果发到飞书，原始聊天日志仍然保留在页面预览和本地 Markdown 文件里。项目会直接调用：
 
 ```bash
 lark-cli im +messages-send --as user --user-id ou_xxx --text "..."
 ```
 
-如果你更习惯机器人方式，也可以切回 `webhook` 模式，并继续填写 `webhook_url` 和可选 `secret`。
+如果你更习惯机器人方式，也可以切回 `webhook` 模式，并继续填写 `webhook_url` 和可选 `secret`。如果你确实需要把完整原始日志发出去，可以把“飞书发送内容”切成 `full`。
 
 ## 隐私与边界
 

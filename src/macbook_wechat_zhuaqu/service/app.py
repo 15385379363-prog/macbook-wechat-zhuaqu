@@ -61,7 +61,11 @@ def create_app(runtime: ServiceRuntime) -> FastAPI:
         if report is None:
             raise HTTPException(status_code=400, detail="请先生成日报。")
         try:
-            return runtime.send_feishu_message(report.raw_markdown, request.test_mode)
+            return runtime.send_feishu_message(
+                report.raw_markdown,
+                request.test_mode,
+                summary_text=report.summary_text,
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

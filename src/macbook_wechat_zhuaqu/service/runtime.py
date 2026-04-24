@@ -186,7 +186,7 @@ class ServiceRuntime:
         )
         return self.latest_report
 
-    def send_feishu_message(self, markdown: str, test_mode: bool) -> dict:
+    def send_feishu_message(self, markdown: str, test_mode: bool, summary_text: Optional[str] = None) -> dict:
         config = self.load_config()
         delivery = config.feishu_delivery
         if not delivery.enabled and not test_mode:
@@ -194,7 +194,8 @@ class ServiceRuntime:
 
         title = delivery.message_title.strip() or "微信日报"
         prefix = "[测试发送]\n" if test_mode else ""
-        content = f"{prefix}{title}\n\n{markdown}"
+        body = markdown if delivery.send_content == "full" else (summary_text or markdown)
+        content = f"{prefix}{title}\n\n{body}"
         if delivery.mode == "lark_cli":
             return self._send_via_lark_cli(delivery, content, test_mode)
         return self._send_via_webhook(delivery, content, test_mode)
