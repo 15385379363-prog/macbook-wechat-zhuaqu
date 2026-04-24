@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -47,6 +48,8 @@ class FakeRuntime(ServiceRuntime):
             markdown_path="/tmp/wechat-daily/latest.md",
             raw_markdown="# 微信日报\n\n- 重点讨论：生财群在聊 AI 提效\n- 待跟进：跟老婆确认周末安排",
             summary_text="今天最重要的是 AI 提效讨论，以及一个需要跟进的家庭安排。",
+            generated_at="2026-04-24T08:00:00",
+            bullet_count=2,
         )
         return self.latest_report
 
@@ -101,7 +104,12 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
         monitor_contacts=[WechatTarget(name="老婆", enabled=True, source_id="Dahooluu")],
         report_dir="~/Documents/wechat-daily",
         time_mode="8am_to_8am",
-        feishu_delivery=FeishuDeliveryConfig(enabled=True, webhook_url="https://example.com/hook"),
+        feishu_delivery=FeishuDeliveryConfig(
+            enabled=True,
+            webhook_url="https://example.com/hook",
+            secret="demo-secret",
+            message_title="微信重点日报",
+        ),
         summary=SummarySettings(template="focus", ai_enabled=True),
     ).model_dump(mode="json")
 
@@ -112,6 +120,7 @@ def test_config_api_persists_targets_and_feishu_settings(tmp_path: Path):
     persisted = client.get("/api/config")
     assert persisted.status_code == 200
     assert persisted.json()["feishu_delivery"]["webhook_url"] == "https://example.com/hook"
+    assert persisted.json()["feishu_delivery"]["message_title"] == "微信重点日报"
 
 
 def test_generate_report_and_send_to_feishu(tmp_path: Path):
@@ -126,3 +135,53 @@ def test_generate_report_and_send_to_feishu(tmp_path: Path):
     assert send_response.status_code == 200
     assert send_response.json()["ok"] is True
     assert runtime.sent[-1]["test_mode"] is False
+
+
+def test_latest_report_endpoint_returns_preview_metadata(tmp_path: Path):
+    runtime = FakeRuntime(tmp_path / "wechat-daily.json")
+    client = TestClient(create_app(runtime))
+
+    client.post("/api/reports/generate", json={"target_date": "2026-04-24"})
+    response = client.get("/api/reports/latest")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["report_date"] == "2026-04-24"
+    assert body["summary_text"].startswith("今天最重要的是")
+    assert body["raw_markdown"].startswith("# 微信日报")
+
+
+def test_real_feishu_send_supports_secret_signature(monkeypatch, tmp_path: Path):
+    runtime = ServiceRuntime(tmp_path / "config.json", tmp_path / "keys.json", Path("/tmp/project"))
+    runtime.save_config(
+        AppConfig(
+            feishu_delivery=FeishuDeliveryConfig(
+                enabled=True,
+                webhook_url="https://example.com/hook",
+                secret="demo-secret",
+                message_title="每日微信重点",
+            )
+        )
+    )
+
+    mocked_response = Mock()
+    mocked_response.status_code = 200
+    mocked_response.raise_for_status = Mock()
+    captured = {}
+
+    def fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return mocked_response
+
+    monkeypatch.setattr("macbook_wechat_zhuaqu.service.runtime.httpx.post", fake_post)
+
+    result = runtime.send_feishu_message("# 微信日报\n\n- 一条重点", test_mode=False)
+
+    assert result["ok"] is True
+    assert captured["url"] == "https://example.com/hook"
+    assert captured["json"]["msg_type"] == "text"
+    assert "每日微信重点" in captured["json"]["content"]["text"]
+    assert "timestamp" in captured["json"]
+    assert "sign" in captured["json"]

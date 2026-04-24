@@ -15,6 +15,8 @@ class WechatTarget(BaseModel):
 class FeishuDeliveryConfig(BaseModel):
     enabled: bool = False
     webhook_url: Optional[str] = None
+    secret: Optional[str] = None
+    message_title: str = "微信日报"
 
 
 class SummarySettings(BaseModel):
@@ -58,6 +60,8 @@ class ReportResult(BaseModel):
     markdown_path: str
     raw_markdown: str
     summary_text: str
+    generated_at: Optional[str] = None
+    bullet_count: int = 0
 
 
 class FeishuSendRequest(BaseModel):

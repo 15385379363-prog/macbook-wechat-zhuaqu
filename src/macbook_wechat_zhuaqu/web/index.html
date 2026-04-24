@@ -29,6 +29,7 @@
     .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; min-height: 110px; }
     .card h3, section h2 { margin-top: 0; }
+    .meta-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin: 14px 0; }
     textarea, input { width: 100%; border-radius: 12px; border: 1px solid var(--line); padding: 10px 12px; background: #fff; }
     textarea { min-height: 120px; }
     .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
@@ -36,9 +37,15 @@
     .actions button { border: 0; border-radius: 999px; padding: 10px 16px; cursor: pointer; font-weight: 700; }
     .primary { background: var(--brand); color: #fff; }
     .secondary { background: #ead9c8; color: var(--ink); }
+    .ghost { background: transparent; border: 1px solid var(--line) !important; color: var(--ink); }
+    button[disabled] { opacity: 0.5; cursor: wait; }
     pre { white-space: pre-wrap; background: #16120f; color: #f8f2eb; border-radius: 18px; padding: 16px; max-height: 420px; overflow: auto; }
     ul { margin: 0; padding-left: 18px; }
     .status { color: var(--muted); font-size: 14px; }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
+    .success { color: var(--brand); }
+    .danger { color: #ab3b2a; }
+    .path { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; overflow-wrap: anywhere; }
     @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -94,9 +101,14 @@
           <label>摘要模板<input id="summary-template" /></label>
           <label>飞书 Webhook<input id="feishu-webhook" /></label>
         </div>
+        <div class="row">
+          <label>飞书 Secret（可选）<input id="feishu-secret" placeholder="配置了签名校验时填写" /></label>
+          <label>飞书消息标题<input id="feishu-title" placeholder="例如：刘杰的微信重点日报" /></label>
+        </div>
         <div class="actions">
           <button class="primary" id="save-settings">保存设置</button>
         </div>
+        <p class="hint">如果你的飞书机器人开启了签名校验，需要同时填写 webhook 和 secret。</p>
       </section>
 
       <section id="preview" data-panel hidden>
@@ -108,7 +120,13 @@
             <button class="secondary" id="load-latest">载入最近日报</button>
           </div>
         </div>
+        <div class="meta-grid" id="report-meta"></div>
         <p class="status" id="summary-text"></p>
+        <div class="actions">
+          <button class="ghost" id="copy-summary">复制摘要</button>
+          <button class="ghost" id="open-report">打开本地文件</button>
+          <button class="secondary" id="send-from-preview">从这里发送到飞书</button>
+        </div>
         <pre id="report-preview">还没有日报内容。</pre>
       </section>
 
@@ -119,6 +137,7 @@
           <button class="primary" id="send-feishu">发送正式日报</button>
         </div>
         <p class="status" id="feishu-status">尚未发送。</p>
+        <p class="hint">测试发送会把当前日报内容加上“测试发送”前缀，正式发送则直接按配置标题输出。</p>
       </section>
     </main>
   </div>
@@ -127,6 +146,8 @@
     const panels = document.querySelectorAll("[data-panel]");
     let currentConfig = null;
     let latestReport = null;
+    const dashboardStatus = document.getElementById("dashboard-status");
+    const feishuStatus = document.getElementById("feishu-status");
 
     function showTab(id) {
       tabs.forEach((button) => button.classList.toggle("active", button.dataset.tab === id));
@@ -164,6 +185,26 @@
       `).join("");
     }
 
+    function setBusy(button, busy, busyText) {
+      if (!button.dataset.originalText) {
+        button.dataset.originalText = button.textContent;
+      }
+      button.disabled = busy;
+      button.textContent = busy ? busyText : button.dataset.originalText;
+    }
+
+    function renderReportMeta(report) {
+      const items = [
+        ["日期", report.report_date || "latest"],
+        ["生成时间", report.generated_at || "未知"],
+        ["重点条目", String(report.bullet_count || 0)],
+        ["本地文件", report.markdown_path || "未生成"],
+      ];
+      document.getElementById("report-meta").innerHTML = items.map(([title, value]) => `
+        <div class="card"><h3>${title}</h3><div class="${title === "本地文件" ? "path" : ""}">${value}</div></div>
+      `).join("");
+    }
+
     async function loadConfig() {
       currentConfig = await api("/api/config");
       document.getElementById("groups").value = currentConfig.monitor_groups.map((item) => item.name).join("\n");
@@ -172,6 +213,8 @@
       document.getElementById("time-mode").value = currentConfig.time_mode;
       document.getElementById("summary-template").value = currentConfig.summary.template;
       document.getElementById("feishu-webhook").value = currentConfig.feishu_delivery.webhook_url || "";
+      document.getElementById("feishu-secret").value = currentConfig.feishu_delivery.secret || "";
+      document.getElementById("feishu-title").value = currentConfig.feishu_delivery.message_title || "微信日报";
     }
 
     async function loadStatus() {
@@ -182,24 +225,33 @@
       latestReport = await api("/api/reports/latest");
       document.getElementById("summary-text").textContent = latestReport.summary_text;
       document.getElementById("report-preview").textContent = latestReport.raw_markdown;
+      renderReportMeta(latestReport);
     }
 
     document.getElementById("refresh-status").addEventListener("click", loadStatus);
     document.getElementById("run-extract").addEventListener("click", async () => {
-      document.getElementById("dashboard-status").textContent = "已启动初始化，请在微信副本里登录并打开聊天或通讯录页面。";
-      renderStatus(await api("/api/extract/run", { method: "POST" }));
+      const button = document.getElementById("run-extract");
+      setBusy(button, true, "初始化中...");
+      dashboardStatus.textContent = "已启动初始化，请在微信副本里登录并打开聊天或通讯录页面。";
+      try {
+        renderStatus(await api("/api/extract/run", { method: "POST" }));
+      } catch (error) {
+        dashboardStatus.textContent = error.message;
+      } finally {
+        setBusy(button, false);
+      }
     });
     document.getElementById("scan-targets").addEventListener("click", async () => {
       const result = await api("/api/scan/targets");
       document.getElementById("groups").value = result.groups.join("\n");
       document.getElementById("contacts").value = result.contacts.join("\n");
-      document.getElementById("dashboard-status").textContent = `已扫描 ${result.groups.length} 个群聊，${result.contacts.length} 个联系人。`;
+      dashboardStatus.textContent = `已扫描 ${result.groups.length} 个群聊，${result.contacts.length} 个联系人。`;
     });
     document.getElementById("save-targets").addEventListener("click", async () => {
       currentConfig.monitor_groups = toTargetList(document.getElementById("groups").value);
       currentConfig.monitor_contacts = toTargetList(document.getElementById("contacts").value);
       await api("/api/config", { method: "PUT", body: JSON.stringify(currentConfig) });
-      document.getElementById("dashboard-status").textContent = "监控对象已保存。";
+      dashboardStatus.textContent = "监控对象已保存。";
     });
     document.getElementById("save-settings").addEventListener("click", async () => {
       currentConfig.report_dir = document.getElementById("report-dir").value.trim();
@@ -208,29 +260,73 @@
       currentConfig.summary.ai_enabled = true;
       currentConfig.feishu_delivery.enabled = Boolean(document.getElementById("feishu-webhook").value.trim());
       currentConfig.feishu_delivery.webhook_url = document.getElementById("feishu-webhook").value.trim() || null;
+      currentConfig.feishu_delivery.secret = document.getElementById("feishu-secret").value.trim() || null;
+      currentConfig.feishu_delivery.message_title = document.getElementById("feishu-title").value.trim() || "微信日报";
       await api("/api/config", { method: "PUT", body: JSON.stringify(currentConfig) });
-      document.getElementById("dashboard-status").textContent = "日报设置已保存。";
+      dashboardStatus.textContent = "日报设置已保存。";
     });
     document.getElementById("generate-report").addEventListener("click", async () => {
-      latestReport = await api("/api/reports/generate", {
-        method: "POST",
-        body: JSON.stringify({ target_date: document.getElementById("target-date").value.trim() || null }),
-      });
-      document.getElementById("summary-text").textContent = latestReport.summary_text;
-      document.getElementById("report-preview").textContent = latestReport.raw_markdown;
+      const button = document.getElementById("generate-report");
+      setBusy(button, true, "生成中...");
+      try {
+        latestReport = await api("/api/reports/generate", {
+          method: "POST",
+          body: JSON.stringify({ target_date: document.getElementById("target-date").value.trim() || null }),
+        });
+        document.getElementById("summary-text").textContent = latestReport.summary_text;
+        document.getElementById("report-preview").textContent = latestReport.raw_markdown;
+        renderReportMeta(latestReport);
+        dashboardStatus.textContent = "日报生成完成。";
+      } catch (error) {
+        document.getElementById("summary-text").textContent = error.message;
+      } finally {
+        setBusy(button, false);
+      }
     });
-    document.getElementById("load-latest").addEventListener("click", loadLatest);
-    document.getElementById("send-test").addEventListener("click", async () => {
-      const result = await api("/api/feishu/send", { method: "POST", body: JSON.stringify({ test_mode: true }) });
-      document.getElementById("feishu-status").textContent = `测试发送成功，状态码 ${result.status_code}`;
-    });
-    document.getElementById("send-feishu").addEventListener("click", async () => {
-      const result = await api("/api/feishu/send", { method: "POST", body: JSON.stringify({ test_mode: false }) });
-      document.getElementById("feishu-status").textContent = `正式发送成功，状态码 ${result.status_code}`;
+    document.getElementById("load-latest").addEventListener("click", async () => {
+      try {
+        await loadLatest();
+      } catch (error) {
+        document.getElementById("summary-text").textContent = error.message;
+      }
     });
 
+    document.getElementById("copy-summary").addEventListener("click", async () => {
+      if (!latestReport) {
+        document.getElementById("summary-text").textContent = "请先生成或载入日报。";
+        return;
+      }
+      await navigator.clipboard.writeText(latestReport.summary_text);
+      document.getElementById("summary-text").textContent = "摘要已复制到剪贴板。";
+    });
+    document.getElementById("open-report").addEventListener("click", () => {
+      if (!latestReport) {
+        document.getElementById("summary-text").textContent = "请先生成或载入日报。";
+        return;
+      }
+      window.open(`file://${latestReport.markdown_path}`, "_blank");
+    });
+
+    async function sendFeishu(testMode) {
+      const button = document.getElementById(testMode ? "send-test" : "send-feishu");
+      setBusy(button, true, testMode ? "测试发送中..." : "发送中...");
+      try {
+        const result = await api("/api/feishu/send", { method: "POST", body: JSON.stringify({ test_mode: testMode }) });
+        feishuStatus.textContent = `${testMode ? "测试" : "正式"}发送成功，状态码 ${result.status_code}`;
+        feishuStatus.className = "status success";
+      } catch (error) {
+        feishuStatus.textContent = error.message;
+        feishuStatus.className = "status danger";
+      } finally {
+        setBusy(button, false);
+      }
+    }
+    document.getElementById("send-test").addEventListener("click", () => sendFeishu(true));
+    document.getElementById("send-feishu").addEventListener("click", () => sendFeishu(false));
+    document.getElementById("send-from-preview").addEventListener("click", () => sendFeishu(false));
+
     Promise.all([loadConfig(), loadStatus()]).catch((error) => {
-      document.getElementById("dashboard-status").textContent = error.message;
+      dashboardStatus.textContent = error.message;
     });
   </script>
 </body>

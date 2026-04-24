@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import importlib.util
 import json
 import os
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -148,11 +152,14 @@ class ServiceRuntime:
 
         markdown = Path(os.path.expanduser(report_path)).read_text(encoding="utf-8")
         summary = build_focus_summary(markdown) if config.summary.ai_enabled else markdown[:200]
+        bullet_count = sum(1 for line in markdown.splitlines() if line.startswith("- "))
         report = ReportResult(
             report_date=request.target_date or "latest",
             markdown_path=report_path,
             raw_markdown=markdown,
             summary_text=summary,
+            generated_at=datetime.now().isoformat(timespec="seconds"),
+            bullet_count=bullet_count,
         )
         self.latest_report = report
         return report
@@ -174,6 +181,8 @@ class ServiceRuntime:
             markdown_path=str(latest),
             raw_markdown=markdown,
             summary_text=build_focus_summary(markdown),
+            generated_at=datetime.fromtimestamp(latest.stat().st_mtime).isoformat(timespec="seconds"),
+            bullet_count=sum(1 for line in markdown.splitlines() if line.startswith("- ")),
         )
         return self.latest_report
 
@@ -185,10 +194,23 @@ class ServiceRuntime:
         if not delivery.webhook_url:
             raise ValueError("请先在设置页填写飞书 webhook_url。")
 
-        content = "[测试发送]\n" + markdown if test_mode else markdown
+        title = delivery.message_title.strip() or "微信日报"
+        prefix = "[测试发送]\n" if test_mode else ""
+        content = f"{prefix}{title}\n\n{markdown}"
+        payload = {"msg_type": "text", "content": {"text": content}}
+        if delivery.secret:
+            timestamp = str(int(datetime.now().timestamp()))
+            sign = base64.b64encode(
+                hmac.new(
+                    f"{timestamp}\n{delivery.secret}".encode("utf-8"),
+                    digestmod=hashlib.sha256,
+                ).digest()
+            ).decode("utf-8")
+            payload["timestamp"] = timestamp
+            payload["sign"] = sign
         response = httpx.post(
             delivery.webhook_url,
-            json={"msg_type": "text", "content": {"text": content}},
+            json=payload,
             timeout=20.0,
         )
         response.raise_for_status()
